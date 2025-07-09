@@ -73,11 +73,18 @@ void wif_public_keys_batch(const std::vector<std::string> &wifs,
         if(valid[i]) { comp = compf[i]; break; }
     }
 
-    #pragma omp parallel for schedule(dynamic,8)
+    std::vector<Int> valid_keys;
+    std::vector<size_t> idx;
     for(size_t i = 0; i < n; ++i) {
-        if(valid[i])
-            pubkeys[i] = secp->ComputePublicKey(&keys[i]);
+        if(valid[i]) {
+            valid_keys.push_back(keys[i]);
+            idx.push_back(i);
+        }
     }
+    std::vector<Point> tmp(valid_keys.size());
+    secp->ComputePublicKeysPippenger(valid_keys, tmp);
+    for(size_t j = 0; j < idx.size(); ++j)
+        pubkeys[idx[j]] = tmp[j];
 
     compressed = comp;
 }
