@@ -60,6 +60,7 @@ void ripemd160_avx2_8(uint8_t *i0, uint8_t *i1, uint8_t *i2, uint8_t *i3,
                        uint8_t *d0, uint8_t *d1, uint8_t *d2, uint8_t *d3,
                        uint8_t *d4, uint8_t *d5, uint8_t *d6, uint8_t *d7);
 void ripemd160_avx2_8(const uint8_t* in[8], uint8_t* out[8]);
+void ripemd160_avx2_next8(const uint8_t *inputs, size_t stride, uint8_t *out);
 #endif
 
 static inline bool ripemd160_comp_hash(uint8_t *h0, uint8_t *h1) {

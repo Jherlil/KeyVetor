@@ -675,4 +675,14 @@ void sha256_avx2_8(const uint8_t* in[8], uint8_t* out[8]) {
                   out[0], out[1], out[2], out[3], out[4], out[5], out[6], out[7]);
 }
 
+void sha256_avx2_next8(const uint8_t *inputs, size_t stride, uint8_t *out) {
+    const uint8_t* ptrs[8];
+    uint8_t* dsts[8];
+    for(int i=0;i<8;i++) {
+        ptrs[i] = inputs + i*stride;
+        dsts[i] = out + i*32;
+    }
+    sha256_avx2_8(ptrs, dsts);
+}
+
 #endif // __AVX2__

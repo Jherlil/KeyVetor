@@ -19,6 +19,12 @@ Work for Ethereum
 - Distributed coordinator/worker mode (`-x` to host, `-y` to connect) to share work between nodes.
 - Automatic checkpoint/resume of the last scanned key every 5 seconds.
 - Per-thread Bloom filters to reduce false positives.
+- SIMD accelerated SHA256 and RIPEMD160 when compiled with AVX2 support.
+- Fast prefix filtering and xxhash-based lookup tables for hash160 targets.
+- Utilities to validate WIF files and predict future WIFs from a CSV sequence.
+- Batch public key generation accelerated with Pippenger's algorithm and OpenMP.
+- WIF validation runs in batches of eight using AVX2-accelerated SHA256 and RIPEMD160.
+- Hash routines use sha256_avx2_next8 and ripemd160_avx2_next8 for SIMD throughput.
 
 ## Command-line options
 
@@ -45,6 +51,8 @@ Work for Ethereum
   -x port       run as coordinator
   -y host:port  connect as worker
   -z factor     bloom size multiplier
+  -W file       validate WIF entries from CSV and print hash160
+  -P file       predict next WIFs based on CSV sequence
   -J            benchmark RNG throughput
   -sh N         number of OpenCL shaders
 ```

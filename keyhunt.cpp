@@ -31,9 +31,15 @@ extern Secp256K1 *secp;
 #include "hash/sha256.h"
 #include "xxhash/xxhash.h"
 #include "ocl_engine.h"
+#include "wif_utils.h"
 
 #ifndef BATCH
-#define BATCH 1
+#define BATCH 8
+#endif
+
+#ifndef LIKELY
+#define LIKELY(x)   __builtin_expect(!!(x),1)
+#define UNLIKELY(x) __builtin_expect(!!(x),0)
 #endif
 
 static inline Point scalar_mul_win6(const Int& k);
@@ -324,11 +330,47 @@ static inline void rng_fill32(uint8_t out[32]) {
 #ifdef __AVX2__
 static inline void rng_fill32x8(uint8_t out[8][32], Xoshiro256PP_8way &g) {
     alignas(32) uint64_t tmp[8];
-    for (int b = 0; b < 4; ++b) {
-        g.next8(tmp);
-        for (int j = 0; j < 8; ++j)
-            ((uint64_t*)out[j])[b] = __builtin_bswap64(tmp[j]);
-    }
+
+    g.next8(tmp);
+    ((uint64_t*)out[0])[0] = __builtin_bswap64(tmp[0]);
+    ((uint64_t*)out[1])[0] = __builtin_bswap64(tmp[1]);
+    ((uint64_t*)out[2])[0] = __builtin_bswap64(tmp[2]);
+    ((uint64_t*)out[3])[0] = __builtin_bswap64(tmp[3]);
+    ((uint64_t*)out[4])[0] = __builtin_bswap64(tmp[4]);
+    ((uint64_t*)out[5])[0] = __builtin_bswap64(tmp[5]);
+    ((uint64_t*)out[6])[0] = __builtin_bswap64(tmp[6]);
+    ((uint64_t*)out[7])[0] = __builtin_bswap64(tmp[7]);
+    __builtin_prefetch(&out[0][32], 1, 1);
+
+    g.next8(tmp);
+    ((uint64_t*)out[0])[1] = __builtin_bswap64(tmp[0]);
+    ((uint64_t*)out[1])[1] = __builtin_bswap64(tmp[1]);
+    ((uint64_t*)out[2])[1] = __builtin_bswap64(tmp[2]);
+    ((uint64_t*)out[3])[1] = __builtin_bswap64(tmp[3]);
+    ((uint64_t*)out[4])[1] = __builtin_bswap64(tmp[4]);
+    ((uint64_t*)out[5])[1] = __builtin_bswap64(tmp[5]);
+    ((uint64_t*)out[6])[1] = __builtin_bswap64(tmp[6]);
+    ((uint64_t*)out[7])[1] = __builtin_bswap64(tmp[7]);
+
+    g.next8(tmp);
+    ((uint64_t*)out[0])[2] = __builtin_bswap64(tmp[0]);
+    ((uint64_t*)out[1])[2] = __builtin_bswap64(tmp[1]);
+    ((uint64_t*)out[2])[2] = __builtin_bswap64(tmp[2]);
+    ((uint64_t*)out[3])[2] = __builtin_bswap64(tmp[3]);
+    ((uint64_t*)out[4])[2] = __builtin_bswap64(tmp[4]);
+    ((uint64_t*)out[5])[2] = __builtin_bswap64(tmp[5]);
+    ((uint64_t*)out[6])[2] = __builtin_bswap64(tmp[6]);
+    ((uint64_t*)out[7])[2] = __builtin_bswap64(tmp[7]);
+
+    g.next8(tmp);
+    ((uint64_t*)out[0])[3] = __builtin_bswap64(tmp[0]);
+    ((uint64_t*)out[1])[3] = __builtin_bswap64(tmp[1]);
+    ((uint64_t*)out[2])[3] = __builtin_bswap64(tmp[2]);
+    ((uint64_t*)out[3])[3] = __builtin_bswap64(tmp[3]);
+    ((uint64_t*)out[4])[3] = __builtin_bswap64(tmp[4]);
+    ((uint64_t*)out[5])[3] = __builtin_bswap64(tmp[5]);
+    ((uint64_t*)out[6])[3] = __builtin_bswap64(tmp[6]);
+    ((uint64_t*)out[7])[3] = __builtin_bswap64(tmp[7]);
 }
 #endif
 
@@ -544,6 +586,8 @@ Point _2GSn;
 
 void menu();
 void init_generator();
+void check_wifs_file(const char *fname);
+void predict_wifs_file(const char *fname);
 
 int searchbinary(struct address_value *buffer,char *data,int64_t array_length);
 void sleep_ms(int milliseconds);
@@ -762,6 +806,7 @@ struct address_value *addressTable;
 
 static const uint32_t HASH_BITS = 18;
 static std::vector<std::vector<uint32_t>> rmd160_ht(1u << HASH_BITS);
+static bool hash_first_byte[256] = {0};
 
 static inline void rmd160_ht_add(uint32_t idx) {
     uint64_t h = XXH3_64bits(addressTable[idx].value, 20);
@@ -950,7 +995,7 @@ int main(int argc, char **argv)	{
             }
         }
 
-    while ((c = getopt(argc, argv, "deh6MqRSB:b:c:C:E:f:g:I:k:l:m:N:n:p:r:s:t:v:8:z:jJx:y:")) != -1) {
+    while ((c = getopt(argc, argv, "deh6MqRSB:b:c:C:E:f:g:I:k:l:m:N:n:p:r:s:t:v:8:z:jJx:y:W:P:")) != -1) {
 		switch(c) {
 			case 'h':
 				menu();
@@ -1238,7 +1283,15 @@ int main(int argc, char **argv)	{
 				}
 				
 			break;
-			case '8':
+                       case 'W':
+                               check_wifs_file(optarg);
+                               exit(EXIT_SUCCESS);
+                       break;
+                       case 'P':
+                               predict_wifs_file(optarg);
+                               exit(EXIT_SUCCESS);
+                       break;
+                       case '8':
 				if(strlen(optarg) == 58)	{
 					Ccoinbuffer = optarg; 
 					printf("[+] Base58 for Minikeys %s\n",Ccoinbuffer);
@@ -1511,8 +1564,10 @@ int main(int argc, char **argv)	{
                         _sort(addressTable,N);
                         printf(" done! %" PRIu64 " values were loaded and sorted\n",N);
                         writeFileIfNeeded(fileName);
-                        for(uint32_t j = 0; j < N; ++j)
+                        for(uint32_t j = 0; j < N; ++j){
                                 rmd160_ht_add(j);
+                                hash_first_byte[addressTable[j].value[0]] = true;
+                        }
                 }
 	}
 	
@@ -6352,6 +6407,8 @@ void menu() {
         printf("-x port     Run as coordinator on port\n");
         printf("-y host:port Connect to coordinator as worker\n");
         printf("-z value    Bloom size multiplier, only address,rmd160,vanity, xpoint, value >= 1\n");
+        printf("-W file     Validate WIFs from CSV file and print hash160\n");
+        printf("-P file     Predict next WIFs based on CSV sequence\n");
         printf("-J          Benchmark RNG throughput and exit\n");
 	printf("\nExample:\n\n");
 	printf("./keyhunt -m rmd160 -f tests/unsolvedpuzzles.rmd -b 66 -l compress -R -q -t 8\n\n");
@@ -6655,6 +6712,77 @@ bool isValidBase58String(char *str)	{
 	return continuar;
 }
 
+void check_wifs_file(const char *fname) {
+    FILE *fp = fopen(fname, "r");
+    if(!fp) {
+        fprintf(stderr, "[E] Cannot open %s\n", fname);
+        return;
+    }
+    std::vector<std::string> wifs;
+    char line[256];
+    if(fgets(line, sizeof(line), fp)) {
+        /* skip header */
+    }
+    while(fgets(line, sizeof(line), fp)) {
+        char *token = strtok(line, ",\n\r");
+        if(token) wifs.emplace_back(token);
+    }
+    fclose(fp);
+
+    std::vector<Point> pubs;
+    bool comp = true;
+    wif_public_keys_batch(wifs, pubs, comp);
+
+    size_t n = wifs.size();
+    for(size_t i=0;i<n;i+=8) {
+        size_t chunk = (n - i >= 8) ? 8 : n - i;
+        if(i + 8 < n) {
+            __builtin_prefetch(pubs.data() + i + 8, 0, 1);
+            __builtin_prefetch(wifs[i + 8].c_str(), 0, 1);
+        }
+        alignas(32) uint8_t h8[8][20];
+        switch(chunk) {
+            case 8:
+                secp->GetHash160_8(P2PKH, comp,
+                    pubs[i], pubs[i+1], pubs[i+2], pubs[i+3],
+                    pubs[i+4], pubs[i+5], pubs[i+6], pubs[i+7],
+                    h8[0], h8[1], h8[2], h8[3], h8[4], h8[5], h8[6], h8[7]);
+                break;
+            case 7: case 6: case 5:
+                for(size_t j=0;j<chunk;j++)
+                    secp->GetHash160(P2PKH, comp, pubs[i+j], h8[j]);
+                break;
+            case 4:
+                secp->GetHash160(P2PKH, comp,
+                    pubs[i], pubs[i+1], pubs[i+2], pubs[i+3],
+                    h8[0], h8[1], h8[2], h8[3]);
+                break;
+            default:
+                for(size_t j=0;j<chunk;j++)
+                    secp->GetHash160(P2PKH, comp, pubs[i+j], h8[j]);
+                break;
+        }
+        for(size_t j=0;j<chunk;j++) {
+            char hex[41];
+            for(int k=0;k<20;k++) sprintf(hex+k*2, "%02x", h8[j][k]);
+            hex[40] = 0;
+            printf("%s,%s\n", wifs[i+j].c_str(), hex);
+        }
+    }
+}
+
+void predict_wifs_file(const char *fname) {
+    Int start, end;
+    if(FLAGRANGE) {
+        start.Set(&n_range_start);
+        end.Set(&n_range_end);
+    } else {
+        start.Set(&ONE);
+        end.Set(&secp->order);
+    }
+    predict_wifs_range(fname, start, end);
+}
+
 bool processOneVanity()	{
 	int i,k;
 	if(vanity_rmd_targets == 0)	{
@@ -6723,7 +6851,8 @@ bool readFileAddress(char *fileName)	{
 	uint8_t checksum[32],hexPrefix[9];
 	char dataChecksum[32],bloomChecksum[32];
 	size_t bytesRead;
-	uint64_t dataSize;
+        uint64_t dataSize;
+        memset(hash_first_byte,0,sizeof(hash_first_byte));
 	/*
 		if the FLAGSAVEREADFILE is Set to 1 we need to the checksum and check if we have that information already saved
 	*/
@@ -6895,8 +7024,9 @@ bool forceReadFileAddress(char *fileName)	{
 	uint64_t numberItems,i;
 	size_t r,raw_value_length;
 	uint8_t rawvalue[50];
-	char aux[100],*hextemp;
-	fileDescriptor = fopen(fileName,"r");	
+        char aux[100],*hextemp;
+        memset(hash_first_byte,0,sizeof(hash_first_byte));
+        fileDescriptor = fopen(fileName,"r");
 	if(fileDescriptor == NULL)	{
 		fprintf(stderr,"[E] Error opening the file %s, line %i\n",fileName,__LINE__ - 2);
 		return false;
@@ -6958,8 +7088,10 @@ bool forceReadFileAddress(char *fileName)	{
 		}
 	}
         N = numberItems;
-        for(uint32_t j = 0; j < N; ++j)
+        for(uint32_t j = 0; j < N; ++j){
                 rmd160_ht_add(j);
+                hash_first_byte[addressTable[j].value[0]] = true;
+        }
         return true;
 }
 
@@ -6970,8 +7102,9 @@ bool forceReadFileAddressEth(char *fileName)	{
 	uint64_t numberItems,i;
 	size_t r;
 	uint8_t rawvalue[50];
-	char aux[100],*hextemp;
-	fileDescriptor = fopen(fileName,"r");	
+        char aux[100],*hextemp;
+        memset(hash_first_byte,0,sizeof(hash_first_byte));
+        fileDescriptor = fopen(fileName,"r");
 	if(fileDescriptor == NULL)	{
 		fprintf(stderr,"[E] Error opening the file %s, line %i\n",fileName,__LINE__ - 2);
 		return false;
@@ -7038,8 +7171,10 @@ bool forceReadFileAddressEth(char *fileName)	{
 	}
 	
         fclose(fileDescriptor);
-        for(uint32_t j = 0; j < N; ++j)
+        for(uint32_t j = 0; j < N; ++j){
                 rmd160_ht_add(j);
+                hash_first_byte[addressTable[j].value[0]] = true;
+        }
         return true;
 }
 
@@ -7265,10 +7400,12 @@ void writeFileIfNeeded(const char *fileName)	{
 			printf(".");
 			
                         FLAGREADEDFILE1 = 1;
-                        for(uint32_t j = 0; j < N; ++j)
+                        for(uint32_t j = 0; j < N; ++j){
                                 rmd160_ht_add(j);
+                                hash_first_byte[addressTable[j].value[0]] = true;
+                        }
                         fclose(fileDescriptor);
-			printf("\n");
+                        printf("\n");
 		}
 	}
 }
@@ -7435,7 +7572,11 @@ void compare_block(struct rmd160_entry *table,uint64_t count){
         if(NTHREADS == 1){
 #pragma omp parallel for schedule(static)
                 for(uint64_t i = 0; i < count; i++){
-                        if(bloom_check(&bloom,table[i].hash,20) && rmd160_ht_lookup(table[i].hash)){
+                        if(i+1 < count)
+                                __builtin_prefetch(&table[i+1], 0, 1);
+                        if(LIKELY(hash_first_byte[table[i].hash[0]]) &&
+                           LIKELY(bloom_check(&bloom,table[i].hash,20)) &&
+                           LIKELY(rmd160_ht_lookup(table[i].hash))){
                                 Int key; key.Set32Bytes(table[i].priv);
                                 rmd160toaddress_dst((char*)table[i].hash,address);
 #pragma omp critical
@@ -7446,7 +7587,9 @@ void compare_block(struct rmd160_entry *table,uint64_t count){
                                 }
                         }
                         if(FLAGENDOMORPHISM){
-                                if(bloom_check(&bloom,table[i].hash_l1,20) && rmd160_ht_lookup(table[i].hash_l1)){
+                                if(LIKELY(hash_first_byte[table[i].hash_l1[0]]) &&
+                                   LIKELY(bloom_check(&bloom,table[i].hash_l1,20)) &&
+                                   LIKELY(rmd160_ht_lookup(table[i].hash_l1))){
                                         Int k; k.Set32Bytes(table[i].priv); k.ModMulK1order(&lambda);
                                         rmd160toaddress_dst((char*)table[i].hash_l1,address);
 #pragma omp critical
@@ -7456,7 +7599,9 @@ void compare_block(struct rmd160_entry *table,uint64_t count){
                                                 free(keyhex);
                                         }
                                 }
-                                if(bloom_check(&bloom,table[i].hash_l2,20) && rmd160_ht_lookup(table[i].hash_l2)){
+                                if(LIKELY(hash_first_byte[table[i].hash_l2[0]]) &&
+                                   LIKELY(bloom_check(&bloom,table[i].hash_l2,20)) &&
+                                   LIKELY(rmd160_ht_lookup(table[i].hash_l2))){
                                         Int k; k.Set32Bytes(table[i].priv); k.ModMulK1order(&lambda2);
                                         rmd160toaddress_dst((char*)table[i].hash_l2,address);
 #pragma omp critical
@@ -7470,7 +7615,11 @@ void compare_block(struct rmd160_entry *table,uint64_t count){
                 }
         }else{
                 for(uint64_t i = 0; i < count; i++){
-                        if(bloom_check(&bloom,table[i].hash,20) && rmd160_ht_lookup(table[i].hash)){
+                        if(i+1 < count)
+                                __builtin_prefetch(&table[i+1], 0, 1);
+                        if(LIKELY(hash_first_byte[table[i].hash[0]]) &&
+                           LIKELY(bloom_check(&bloom,table[i].hash,20)) &&
+                           LIKELY(rmd160_ht_lookup(table[i].hash))){
                                 Int key; key.Set32Bytes(table[i].priv);
                                 rmd160toaddress_dst((char*)table[i].hash,address);
                                 char *keyhex = key.GetBase16();
@@ -7478,14 +7627,18 @@ void compare_block(struct rmd160_entry *table,uint64_t count){
                                 free(keyhex);
                         }
                         if(FLAGENDOMORPHISM){
-                                if(bloom_check(&bloom,table[i].hash_l1,20) && rmd160_ht_lookup(table[i].hash_l1)){
+                                if(LIKELY(hash_first_byte[table[i].hash_l1[0]]) &&
+                                   LIKELY(bloom_check(&bloom,table[i].hash_l1,20)) &&
+                                   LIKELY(rmd160_ht_lookup(table[i].hash_l1))){
                                         Int k; k.Set32Bytes(table[i].priv); k.ModMulK1order(&lambda);
                                         rmd160toaddress_dst((char*)table[i].hash_l1,address);
                                         char *keyhex = k.GetBase16();
                                         printf("\n[+] HIT privkey %s address %s\n",keyhex,address);
                                         free(keyhex);
                                 }
-                                if(bloom_check(&bloom,table[i].hash_l2,20) && rmd160_ht_lookup(table[i].hash_l2)){
+                                if(LIKELY(hash_first_byte[table[i].hash_l2[0]]) &&
+                                   LIKELY(bloom_check(&bloom,table[i].hash_l2,20)) &&
+                                   LIKELY(rmd160_ht_lookup(table[i].hash_l2))){
                                         Int k; k.Set32Bytes(table[i].priv); k.ModMulK1order(&lambda2);
                                         rmd160toaddress_dst((char*)table[i].hash_l2,address);
                                         char *keyhex = k.GetBase16();
