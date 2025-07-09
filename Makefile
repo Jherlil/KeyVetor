@@ -2,12 +2,12 @@ CXX ?= g++
 CC  ?= gcc
 
 CXXFLAGS += -std=c++11 -O3 -march=native -mavx2 -maes -msha -mpclmul \
-            -funroll-loops -fomit-frame-pointer -pipe -fopenmp \
+            -funroll-loops -fomit-frame-pointer -pipe -fopenmp -flto \
             -fcf-protection=none
 CFLAGS   += -O3 -march=native -mavx2 -maes -msha -mpclmul  \
-            -funroll-loops -fomit-frame-pointer -pipe -fopenmp \
+            -funroll-loops -fomit-frame-pointer -pipe -fopenmp -flto \
             -fcf-protection=none
-LDFLAGS  += -lm -lpthread -lOpenCL
+LDFLAGS  += -lm -lpthread -lOpenCL -flto
 ifeq ($(OS),Windows_NT)
 LDFLAGS  += -lws2_32
 endif
@@ -22,7 +22,8 @@ OBJS = \
     util.o \
     secp256k1/Int.o secp256k1/Point.o secp256k1/SECP256K1.o \
     secp256k1/IntMod.o secp256k1/Random.o secp256k1/IntGroup.o \
-    hash/ripemd160.o hash/sha256.o hash/ripemd160_sse.o hash/sha256_sse.o \
+    hash/ripemd160.o hash/sha256.o \
+    hash/ripemd160_sse.o hash/sha256_sse.o \
     distributed.o skiprange.o ocl_engine.o wif_utils.o
 
 all: keyhunt

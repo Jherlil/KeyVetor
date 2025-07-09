@@ -37,6 +37,11 @@ extern Secp256K1 *secp;
 #define BATCH 1
 #endif
 
+#ifndef LIKELY
+#define LIKELY(x)   __builtin_expect(!!(x),1)
+#define UNLIKELY(x) __builtin_expect(!!(x),0)
+#endif
+
 static inline Point scalar_mul_win6(const Int& k);
 #ifdef __AVX2__
 static inline void scalar_mul_win6_8way(const Int* k8, Point* P8);
@@ -7502,9 +7507,11 @@ void compare_block(struct rmd160_entry *table,uint64_t count){
         if(NTHREADS == 1){
 #pragma omp parallel for schedule(static)
                 for(uint64_t i = 0; i < count; i++){
-                        if(hash_first_byte[table[i].hash[0]] &&
-                           bloom_check(&bloom,table[i].hash,20) &&
-                           rmd160_ht_lookup(table[i].hash)){
+                        if(i+1 < count)
+                                __builtin_prefetch(&table[i+1], 0, 1);
+                        if(LIKELY(hash_first_byte[table[i].hash[0]]) &&
+                           LIKELY(bloom_check(&bloom,table[i].hash,20)) &&
+                           LIKELY(rmd160_ht_lookup(table[i].hash))){
                                 Int key; key.Set32Bytes(table[i].priv);
                                 rmd160toaddress_dst((char*)table[i].hash,address);
 #pragma omp critical
@@ -7515,9 +7522,9 @@ void compare_block(struct rmd160_entry *table,uint64_t count){
                                 }
                         }
                         if(FLAGENDOMORPHISM){
-                                if(hash_first_byte[table[i].hash_l1[0]] &&
-                                   bloom_check(&bloom,table[i].hash_l1,20) &&
-                                   rmd160_ht_lookup(table[i].hash_l1)){
+                                if(LIKELY(hash_first_byte[table[i].hash_l1[0]]) &&
+                                   LIKELY(bloom_check(&bloom,table[i].hash_l1,20)) &&
+                                   LIKELY(rmd160_ht_lookup(table[i].hash_l1))){
                                         Int k; k.Set32Bytes(table[i].priv); k.ModMulK1order(&lambda);
                                         rmd160toaddress_dst((char*)table[i].hash_l1,address);
 #pragma omp critical
@@ -7527,9 +7534,9 @@ void compare_block(struct rmd160_entry *table,uint64_t count){
                                                 free(keyhex);
                                         }
                                 }
-                                if(hash_first_byte[table[i].hash_l2[0]] &&
-                                   bloom_check(&bloom,table[i].hash_l2,20) &&
-                                   rmd160_ht_lookup(table[i].hash_l2)){
+                                if(LIKELY(hash_first_byte[table[i].hash_l2[0]]) &&
+                                   LIKELY(bloom_check(&bloom,table[i].hash_l2,20)) &&
+                                   LIKELY(rmd160_ht_lookup(table[i].hash_l2))){
                                         Int k; k.Set32Bytes(table[i].priv); k.ModMulK1order(&lambda2);
                                         rmd160toaddress_dst((char*)table[i].hash_l2,address);
 #pragma omp critical
@@ -7543,9 +7550,11 @@ void compare_block(struct rmd160_entry *table,uint64_t count){
                 }
         }else{
                 for(uint64_t i = 0; i < count; i++){
-                        if(hash_first_byte[table[i].hash[0]] &&
-                           bloom_check(&bloom,table[i].hash,20) &&
-                           rmd160_ht_lookup(table[i].hash)){
+                        if(i+1 < count)
+                                __builtin_prefetch(&table[i+1], 0, 1);
+                        if(LIKELY(hash_first_byte[table[i].hash[0]]) &&
+                           LIKELY(bloom_check(&bloom,table[i].hash,20)) &&
+                           LIKELY(rmd160_ht_lookup(table[i].hash))){
                                 Int key; key.Set32Bytes(table[i].priv);
                                 rmd160toaddress_dst((char*)table[i].hash,address);
                                 char *keyhex = key.GetBase16();
@@ -7553,18 +7562,18 @@ void compare_block(struct rmd160_entry *table,uint64_t count){
                                 free(keyhex);
                         }
                         if(FLAGENDOMORPHISM){
-                                if(hash_first_byte[table[i].hash_l1[0]] &&
-                                   bloom_check(&bloom,table[i].hash_l1,20) &&
-                                   rmd160_ht_lookup(table[i].hash_l1)){
+                                if(LIKELY(hash_first_byte[table[i].hash_l1[0]]) &&
+                                   LIKELY(bloom_check(&bloom,table[i].hash_l1,20)) &&
+                                   LIKELY(rmd160_ht_lookup(table[i].hash_l1))){
                                         Int k; k.Set32Bytes(table[i].priv); k.ModMulK1order(&lambda);
                                         rmd160toaddress_dst((char*)table[i].hash_l1,address);
                                         char *keyhex = k.GetBase16();
                                         printf("\n[+] HIT privkey %s address %s\n",keyhex,address);
                                         free(keyhex);
                                 }
-                                if(hash_first_byte[table[i].hash_l2[0]] &&
-                                   bloom_check(&bloom,table[i].hash_l2,20) &&
-                                   rmd160_ht_lookup(table[i].hash_l2)){
+                                if(LIKELY(hash_first_byte[table[i].hash_l2[0]]) &&
+                                   LIKELY(bloom_check(&bloom,table[i].hash_l2,20)) &&
+                                   LIKELY(rmd160_ht_lookup(table[i].hash_l2))){
                                         Int k; k.Set32Bytes(table[i].priv); k.ModMulK1order(&lambda2);
                                         rmd160toaddress_dst((char*)table[i].hash_l2,address);
                                         char *keyhex = k.GetBase16();
