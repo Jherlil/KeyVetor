@@ -47,6 +47,25 @@ bool wif_public_key(const std::string &wif, Point &pubkey, bool &compressed) {
     return true;
 }
 
+void wif_public_keys_batch(const std::vector<std::string> &wifs,
+                           std::vector<Point> &pubkeys,
+                           bool &compressed) {
+    std::vector<Int> keys;
+    keys.reserve(wifs.size());
+    bool comp = true;
+    for(const auto &w : wifs) {
+        Int k; bool c = false;
+        if(wif_decode(w, k, c)) {
+            keys.push_back(k);
+            comp = c;
+        } else {
+            keys.push_back(Int());
+        }
+    }
+    secp->ComputePublicKeysPippenger(keys, pubkeys);
+    compressed = comp;
+}
+
 bool wif_encode(const Int &key, bool compressed, std::string &wif) {
     unsigned char data[34];
     size_t len = 33;

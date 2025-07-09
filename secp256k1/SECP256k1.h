@@ -35,6 +35,8 @@ public:
   ~Secp256K1();
   void  Init();
   Point ComputePublicKey(Int *privKey);
+  void  ComputePublicKeysPippenger(const std::vector<Int> &privKeys,
+                                   std::vector<Point> &pubKeys);
   Point NextKey(Point &key);
   bool  EC(Point &p);
   

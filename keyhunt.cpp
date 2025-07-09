@@ -6677,27 +6677,28 @@ void check_wifs_file(const char *fname) {
         fprintf(stderr, "[E] Cannot open %s\n", fname);
         return;
     }
+    std::vector<std::string> wifs;
     char line[256];
     if(fgets(line, sizeof(line), fp)) {
         /* skip header */
     }
     while(fgets(line, sizeof(line), fp)) {
         char *token = strtok(line, ",\n\r");
-        if(!token) continue;
-        bool comp = false;
-        Point pub;
-        if(wif_public_key(token, pub, comp)) {
-            unsigned char h160[20];
-            secp->GetHash160(P2PKH, comp, pub, h160);
-            char hex[41];
-            for(int i=0;i<20;i++) sprintf(hex+i*2, "%02x", h160[i]);
-            hex[40]=0;
-            printf("%s,%s\n", token, hex);
-        } else {
-            fprintf(stderr, "Invalid WIF: %s\n", token);
-        }
+        if(token) wifs.emplace_back(token);
     }
     fclose(fp);
+
+    std::vector<Point> pubs;
+    bool comp = true;
+    wif_public_keys_batch(wifs, pubs, comp);
+    for(size_t i=0;i<wifs.size();i++) {
+        unsigned char h160[20];
+        secp->GetHash160(P2PKH, comp, pubs[i], h160);
+        char hex[41];
+        for(int j=0;j<20;j++) sprintf(hex+j*2, "%02x", h160[j]);
+        hex[40]=0;
+        printf("%s,%s\n", wifs[i].c_str(), hex);
+    }
 }
 
 void predict_wifs_file(const char *fname) {

@@ -87,6 +87,40 @@ Point Secp256K1::NextKey(Point &key) {
   return AddDirect(key,G);
 }
 
+void Secp256K1::ComputePublicKeysPippenger(const std::vector<Int> &privKeys,
+                                           std::vector<Point> &pubKeys) {
+  size_t n = privKeys.size();
+  pubKeys.resize(n);
+  if(n == 0) return;
+
+  int max_bits = 0;
+  for(const Int &vk : privKeys) {
+    Int k(vk);
+    int bl = k.GetBitLength();
+    if(bl > max_bits) max_bits = bl;
+  }
+
+  std::vector<Point> R(n);
+  for(size_t i = 0; i < n; ++i) {
+    R[i].Clear();
+    R[i].z.SetInt32(1);
+  }
+
+  for(int bit = max_bits - 1; bit >= 0; --bit) {
+    for(size_t i = 0; i < n; ++i) {
+      R[i] = DoubleDirect(R[i]);
+      Int tmp(privKeys[i]);
+      if(tmp.GetBit(bit))
+        R[i] = AddDirect(R[i], G);
+    }
+  }
+
+  for(size_t i = 0; i < n; ++i) {
+    R[i].Reduce();
+    pubKeys[i] = R[i];
+  }
+}
+
 uint8_t Secp256K1::GetByte(char *str, int idx) {
   char tmp[3];
   int  val;
