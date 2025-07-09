@@ -23,6 +23,8 @@ Work for Ethereum
 - Fast prefix filtering and xxhash-based lookup tables for hash160 targets.
 - Utilities to validate WIF files and predict future WIFs from a CSV sequence.
 - Batch public key generation accelerated with Pippenger's algorithm and OpenMP.
+- WIF validation runs in batches of eight using AVX2-accelerated SHA256 and RIPEMD160.
+- Hash routines use sha256_avx2_next8 and ripemd160_avx2_next8 for SIMD throughput.
 
 ## Command-line options
 
