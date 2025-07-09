@@ -23,6 +23,65 @@
 #include "../hash/sha256.h"
 #include "../hash/ripemd160.h"
 
+// Simple windowed scalar multiplication helpers used for batched computation
+#define WINDOW_SIZE 6
+
+struct PrecomputedG {
+    Point win[1 << (WINDOW_SIZE-1)];
+    bool init = false;
+};
+
+static inline PrecomputedG &get_precompG_local(Secp256K1 *ctx) {
+    static thread_local PrecomputedG tbl;
+    if(!tbl.init) {
+        Point twoG = ctx->Double(ctx->G);
+        tbl.win[0] = ctx->G;
+        for(int i=1;i<(1<<(WINDOW_SIZE-1));i++)
+            tbl.win[i] = ctx->Add(tbl.win[i-1], twoG);
+        tbl.init = true;
+    }
+    return tbl;
+}
+
+static inline Point scalar_mul_win6_local(Secp256K1 *ctx, const Int& k) {
+    PrecomputedG &tbl = get_precompG_local(ctx);
+    const int w = WINDOW_SIZE;
+    int pow2w = 1<<w;
+    std::vector<int> digits;
+    Int tmp((Int*)&k);
+    while(!tmp.IsZero()) {
+        if(tmp.IsEven()) {
+            digits.push_back(0);
+        } else {
+            int u = 0;
+            for(int j=0;j<w;j++) if(tmp.GetBit(j)) u |= 1<<j;
+            if(u & (1<<(w-1))) u -= pow2w;
+            if(u>0) tmp.Sub((uint64_t)u); else tmp.Add((uint64_t)(-u));
+            digits.push_back(u);
+        }
+        tmp.ShiftR(1);
+    }
+
+    Point R; R.Clear(); R.z.SetInt32(1);
+    for(int i=digits.size()-1;i>=0;i--) {
+        if(!R.isZero()) R = ctx->Double(R);
+        int d = digits[i];
+        if(d!=0) {
+            Point P = tbl.win[(abs(d)-1)/2];
+            if(d<0) P.y.ModNeg();
+            if(R.isZero()) R.Set(&P.x,&P.y,&P.z); else R = ctx->Add(R,P);
+        }
+    }
+    R.Reduce();
+    return R;
+}
+
+#ifdef __AVX2__
+static inline void scalar_mul_win6_8way_local(Secp256K1 *ctx, const Int* k8, Point* P8) {
+    for(int i=0;i<8;i++) P8[i] = scalar_mul_win6_local(ctx, k8[i]);
+}
+#endif
+
 Secp256K1::Secp256K1() {
 }
 
@@ -93,31 +152,23 @@ void Secp256K1::ComputePublicKeysPippenger(const std::vector<Int> &privKeys,
   pubKeys.resize(n);
   if(n == 0) return;
 
-  int max_bits = 0;
-  for(const Int &vk : privKeys) {
-    Int k(vk);
-    int bl = k.GetBitLength();
-    if(bl > max_bits) max_bits = bl;
-  }
-
-  std::vector<Point> R(n);
-  for(size_t i = 0; i < n; ++i) {
-    R[i].Clear();
-    R[i].z.SetInt32(1);
-  }
-
-  for(int bit = max_bits - 1; bit >= 0; --bit) {
-    for(size_t i = 0; i < n; ++i) {
-      R[i] = DoubleDirect(R[i]);
-      Int tmp(privKeys[i]);
-      if(tmp.GetBit(bit))
-        R[i] = AddDirect(R[i], G);
+#pragma omp parallel for schedule(static)
+  for(size_t base = 0; base < n; base += 8) {
+    size_t chunk = (base + 8 <= n) ? 8 : n - base;
+#ifdef __AVX2__
+    if(chunk == 8) {
+      Int keys8[8];
+      for(int i=0;i<8;i++)
+        keys8[i] = privKeys[base + i];
+      Point P8[8];
+      scalar_mul_win6_8way_local(this, keys8, P8);
+      for(int i=0;i<8;i++)
+        pubKeys[base + i] = P8[i];
+      continue;
     }
-  }
-
-  for(size_t i = 0; i < n; ++i) {
-    R[i].Reduce();
-    pubKeys[i] = R[i];
+#endif
+    for(size_t j=0;j<chunk;j++)
+      pubKeys[base + j] = scalar_mul_win6_local(this, privKeys[base + j]);
   }
 }
 

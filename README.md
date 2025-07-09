@@ -22,6 +22,7 @@ Work for Ethereum
 - SIMD accelerated SHA256 and RIPEMD160 when compiled with AVX2 support.
 - Fast prefix filtering and xxhash-based lookup tables for hash160 targets.
 - Utilities to validate WIF files and predict future WIFs from a CSV sequence.
+- Batch public key generation accelerated with Pippenger's algorithm and OpenMP.
 
 ## Command-line options
 
