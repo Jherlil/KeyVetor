@@ -643,8 +643,8 @@ void Secp256K1::GetHash160_8(int type,bool compressed,
     GetPublicKeyRaw(true,k6,(char*)pk[6]);
     GetPublicKeyRaw(true,k7,(char*)pk[7]);
 
-    sha256_batch_33((uint8_t*)pk,8,(uint8_t*)sh);
-    ripemd160_batch_32((uint8_t*)sh,8,(uint8_t*)rh);
+    sha256_avx2_next8((uint8_t*)pk,33,(uint8_t*)sh);
+    ripemd160_avx2_next8((uint8_t*)sh,32,(uint8_t*)rh);
 
     memcpy(h0,rh[0],20); memcpy(h1,rh[1],20); memcpy(h2,rh[2],20); memcpy(h3,rh[3],20);
     memcpy(h4,rh[4],20); memcpy(h5,rh[5],20); memcpy(h6,rh[6],20); memcpy(h7,rh[7],20);

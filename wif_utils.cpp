@@ -16,6 +16,12 @@ static bool double_sha256(const unsigned char *data, size_t len, unsigned char *
 }
 
 bool wif_decode(const std::string &wif, Int &key, bool &compressed) {
+    static const char *b58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+    for(char c : wif) {
+        if(!strchr(b58, c))
+            return false;
+    }
+
     size_t binsz = 0;
     std::vector<unsigned char> bin(wif.size());
     if(!b58tobin(bin.data(), &binsz, wif.c_str(), wif.size()))
