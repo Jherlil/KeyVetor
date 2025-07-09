@@ -31,6 +31,7 @@ extern Secp256K1 *secp;
 #include "hash/sha256.h"
 #include "xxhash/xxhash.h"
 #include "ocl_engine.h"
+#include "wif_utils.h"
 
 #ifndef BATCH
 #define BATCH 1
@@ -544,6 +545,8 @@ Point _2GSn;
 
 void menu();
 void init_generator();
+void check_wifs_file(const char *fname);
+void predict_wifs_file(const char *fname);
 
 int searchbinary(struct address_value *buffer,char *data,int64_t array_length);
 void sleep_ms(int milliseconds);
@@ -762,6 +765,7 @@ struct address_value *addressTable;
 
 static const uint32_t HASH_BITS = 18;
 static std::vector<std::vector<uint32_t>> rmd160_ht(1u << HASH_BITS);
+static bool hash_first_byte[256] = {0};
 
 static inline void rmd160_ht_add(uint32_t idx) {
     uint64_t h = XXH3_64bits(addressTable[idx].value, 20);
@@ -950,7 +954,7 @@ int main(int argc, char **argv)	{
             }
         }
 
-    while ((c = getopt(argc, argv, "deh6MqRSB:b:c:C:E:f:g:I:k:l:m:N:n:p:r:s:t:v:8:z:jJx:y:")) != -1) {
+    while ((c = getopt(argc, argv, "deh6MqRSB:b:c:C:E:f:g:I:k:l:m:N:n:p:r:s:t:v:8:z:jJx:y:W:P:")) != -1) {
 		switch(c) {
 			case 'h':
 				menu();
@@ -1238,7 +1242,15 @@ int main(int argc, char **argv)	{
 				}
 				
 			break;
-			case '8':
+                       case 'W':
+                               check_wifs_file(optarg);
+                               exit(EXIT_SUCCESS);
+                       break;
+                       case 'P':
+                               predict_wifs_file(optarg);
+                               exit(EXIT_SUCCESS);
+                       break;
+                       case '8':
 				if(strlen(optarg) == 58)	{
 					Ccoinbuffer = optarg; 
 					printf("[+] Base58 for Minikeys %s\n",Ccoinbuffer);
@@ -1511,8 +1523,10 @@ int main(int argc, char **argv)	{
                         _sort(addressTable,N);
                         printf(" done! %" PRIu64 " values were loaded and sorted\n",N);
                         writeFileIfNeeded(fileName);
-                        for(uint32_t j = 0; j < N; ++j)
+                        for(uint32_t j = 0; j < N; ++j){
                                 rmd160_ht_add(j);
+                                hash_first_byte[addressTable[j].value[0]] = true;
+                        }
                 }
 	}
 	
@@ -6352,6 +6366,8 @@ void menu() {
         printf("-x port     Run as coordinator on port\n");
         printf("-y host:port Connect to coordinator as worker\n");
         printf("-z value    Bloom size multiplier, only address,rmd160,vanity, xpoint, value >= 1\n");
+        printf("-W file     Validate WIFs from CSV file and print hash160\n");
+        printf("-P file     Predict next WIFs based on CSV sequence\n");
         printf("-J          Benchmark RNG throughput and exit\n");
 	printf("\nExample:\n\n");
 	printf("./keyhunt -m rmd160 -f tests/unsolvedpuzzles.rmd -b 66 -l compress -R -q -t 8\n\n");
@@ -6655,6 +6671,47 @@ bool isValidBase58String(char *str)	{
 	return continuar;
 }
 
+void check_wifs_file(const char *fname) {
+    FILE *fp = fopen(fname, "r");
+    if(!fp) {
+        fprintf(stderr, "[E] Cannot open %s\n", fname);
+        return;
+    }
+    char line[256];
+    if(fgets(line, sizeof(line), fp)) {
+        /* skip header */
+    }
+    while(fgets(line, sizeof(line), fp)) {
+        char *token = strtok(line, ",\n\r");
+        if(!token) continue;
+        bool comp = false;
+        Point pub;
+        if(wif_public_key(token, pub, comp)) {
+            unsigned char h160[20];
+            secp->GetHash160(P2PKH, comp, pub, h160);
+            char hex[41];
+            for(int i=0;i<20;i++) sprintf(hex+i*2, "%02x", h160[i]);
+            hex[40]=0;
+            printf("%s,%s\n", token, hex);
+        } else {
+            fprintf(stderr, "Invalid WIF: %s\n", token);
+        }
+    }
+    fclose(fp);
+}
+
+void predict_wifs_file(const char *fname) {
+    Int start, end;
+    if(FLAGRANGE) {
+        start.Set(&n_range_start);
+        end.Set(&n_range_end);
+    } else {
+        start.Set(&ONE);
+        end.Set(&secp->order);
+    }
+    predict_wifs_range(fname, start, end);
+}
+
 bool processOneVanity()	{
 	int i,k;
 	if(vanity_rmd_targets == 0)	{
@@ -6723,7 +6780,8 @@ bool readFileAddress(char *fileName)	{
 	uint8_t checksum[32],hexPrefix[9];
 	char dataChecksum[32],bloomChecksum[32];
 	size_t bytesRead;
-	uint64_t dataSize;
+        uint64_t dataSize;
+        memset(hash_first_byte,0,sizeof(hash_first_byte));
 	/*
 		if the FLAGSAVEREADFILE is Set to 1 we need to the checksum and check if we have that information already saved
 	*/
@@ -6895,8 +6953,9 @@ bool forceReadFileAddress(char *fileName)	{
 	uint64_t numberItems,i;
 	size_t r,raw_value_length;
 	uint8_t rawvalue[50];
-	char aux[100],*hextemp;
-	fileDescriptor = fopen(fileName,"r");	
+        char aux[100],*hextemp;
+        memset(hash_first_byte,0,sizeof(hash_first_byte));
+        fileDescriptor = fopen(fileName,"r");
 	if(fileDescriptor == NULL)	{
 		fprintf(stderr,"[E] Error opening the file %s, line %i\n",fileName,__LINE__ - 2);
 		return false;
@@ -6958,8 +7017,10 @@ bool forceReadFileAddress(char *fileName)	{
 		}
 	}
         N = numberItems;
-        for(uint32_t j = 0; j < N; ++j)
+        for(uint32_t j = 0; j < N; ++j){
                 rmd160_ht_add(j);
+                hash_first_byte[addressTable[j].value[0]] = true;
+        }
         return true;
 }
 
@@ -6970,8 +7031,9 @@ bool forceReadFileAddressEth(char *fileName)	{
 	uint64_t numberItems,i;
 	size_t r;
 	uint8_t rawvalue[50];
-	char aux[100],*hextemp;
-	fileDescriptor = fopen(fileName,"r");	
+        char aux[100],*hextemp;
+        memset(hash_first_byte,0,sizeof(hash_first_byte));
+        fileDescriptor = fopen(fileName,"r");
 	if(fileDescriptor == NULL)	{
 		fprintf(stderr,"[E] Error opening the file %s, line %i\n",fileName,__LINE__ - 2);
 		return false;
@@ -7038,8 +7100,10 @@ bool forceReadFileAddressEth(char *fileName)	{
 	}
 	
         fclose(fileDescriptor);
-        for(uint32_t j = 0; j < N; ++j)
+        for(uint32_t j = 0; j < N; ++j){
                 rmd160_ht_add(j);
+                hash_first_byte[addressTable[j].value[0]] = true;
+        }
         return true;
 }
 
@@ -7265,10 +7329,12 @@ void writeFileIfNeeded(const char *fileName)	{
 			printf(".");
 			
                         FLAGREADEDFILE1 = 1;
-                        for(uint32_t j = 0; j < N; ++j)
+                        for(uint32_t j = 0; j < N; ++j){
                                 rmd160_ht_add(j);
+                                hash_first_byte[addressTable[j].value[0]] = true;
+                        }
                         fclose(fileDescriptor);
-			printf("\n");
+                        printf("\n");
 		}
 	}
 }
@@ -7435,7 +7501,9 @@ void compare_block(struct rmd160_entry *table,uint64_t count){
         if(NTHREADS == 1){
 #pragma omp parallel for schedule(static)
                 for(uint64_t i = 0; i < count; i++){
-                        if(bloom_check(&bloom,table[i].hash,20) && rmd160_ht_lookup(table[i].hash)){
+                        if(hash_first_byte[table[i].hash[0]] &&
+                           bloom_check(&bloom,table[i].hash,20) &&
+                           rmd160_ht_lookup(table[i].hash)){
                                 Int key; key.Set32Bytes(table[i].priv);
                                 rmd160toaddress_dst((char*)table[i].hash,address);
 #pragma omp critical
@@ -7446,7 +7514,9 @@ void compare_block(struct rmd160_entry *table,uint64_t count){
                                 }
                         }
                         if(FLAGENDOMORPHISM){
-                                if(bloom_check(&bloom,table[i].hash_l1,20) && rmd160_ht_lookup(table[i].hash_l1)){
+                                if(hash_first_byte[table[i].hash_l1[0]] &&
+                                   bloom_check(&bloom,table[i].hash_l1,20) &&
+                                   rmd160_ht_lookup(table[i].hash_l1)){
                                         Int k; k.Set32Bytes(table[i].priv); k.ModMulK1order(&lambda);
                                         rmd160toaddress_dst((char*)table[i].hash_l1,address);
 #pragma omp critical
@@ -7456,7 +7526,9 @@ void compare_block(struct rmd160_entry *table,uint64_t count){
                                                 free(keyhex);
                                         }
                                 }
-                                if(bloom_check(&bloom,table[i].hash_l2,20) && rmd160_ht_lookup(table[i].hash_l2)){
+                                if(hash_first_byte[table[i].hash_l2[0]] &&
+                                   bloom_check(&bloom,table[i].hash_l2,20) &&
+                                   rmd160_ht_lookup(table[i].hash_l2)){
                                         Int k; k.Set32Bytes(table[i].priv); k.ModMulK1order(&lambda2);
                                         rmd160toaddress_dst((char*)table[i].hash_l2,address);
 #pragma omp critical
@@ -7470,7 +7542,9 @@ void compare_block(struct rmd160_entry *table,uint64_t count){
                 }
         }else{
                 for(uint64_t i = 0; i < count; i++){
-                        if(bloom_check(&bloom,table[i].hash,20) && rmd160_ht_lookup(table[i].hash)){
+                        if(hash_first_byte[table[i].hash[0]] &&
+                           bloom_check(&bloom,table[i].hash,20) &&
+                           rmd160_ht_lookup(table[i].hash)){
                                 Int key; key.Set32Bytes(table[i].priv);
                                 rmd160toaddress_dst((char*)table[i].hash,address);
                                 char *keyhex = key.GetBase16();
@@ -7478,14 +7552,18 @@ void compare_block(struct rmd160_entry *table,uint64_t count){
                                 free(keyhex);
                         }
                         if(FLAGENDOMORPHISM){
-                                if(bloom_check(&bloom,table[i].hash_l1,20) && rmd160_ht_lookup(table[i].hash_l1)){
+                                if(hash_first_byte[table[i].hash_l1[0]] &&
+                                   bloom_check(&bloom,table[i].hash_l1,20) &&
+                                   rmd160_ht_lookup(table[i].hash_l1)){
                                         Int k; k.Set32Bytes(table[i].priv); k.ModMulK1order(&lambda);
                                         rmd160toaddress_dst((char*)table[i].hash_l1,address);
                                         char *keyhex = k.GetBase16();
                                         printf("\n[+] HIT privkey %s address %s\n",keyhex,address);
                                         free(keyhex);
                                 }
-                                if(bloom_check(&bloom,table[i].hash_l2,20) && rmd160_ht_lookup(table[i].hash_l2)){
+                                if(hash_first_byte[table[i].hash_l2[0]] &&
+                                   bloom_check(&bloom,table[i].hash_l2,20) &&
+                                   rmd160_ht_lookup(table[i].hash_l2)){
                                         Int k; k.Set32Bytes(table[i].priv); k.ModMulK1order(&lambda2);
                                         rmd160toaddress_dst((char*)table[i].hash_l2,address);
                                         char *keyhex = k.GetBase16();
