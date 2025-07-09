@@ -1,0 +1,253 @@
+diff --git a/keyhunt.cpp b/keyhunt.cpp
+index b4a242b4d65a86b02570a0eed66c3e591f443e29..0ff6ea3ed7539bce29ef8a7f580a4395aace8d86 100644
+--- a/keyhunt.cpp
++++ b/keyhunt.cpp
+@@ -1,40 +1,40 @@
+ /*
+ Develop by Alberto
+ email: albertobsd@gmail.com
+ */
+ 
+ #include <stdio.h>
+ #include <stdlib.h>
+ #include <stdint.h>
+ #include <string.h>
+ #include <math.h>
+ #include <time.h>
+ #include <vector>
+ #include <inttypes.h>
+ #include "base58/libbase58.h"
+-#include "rmd160/rmd160.h"
++#include "rmd160/rmd160_bsgs.h"
+ #include "oldbloom/oldbloom.h"
+ #include "bloom/bloom.h"
+ #include "sha3/sha3.h"
+ #include "util.h"
+ 
+ #include "secp256k1/SECP256k1.h"
+ #include "secp256k1/Point.h"
+ #include "secp256k1/Int.h"
+ #include "secp256k1/IntGroup.h"
+ #include "secp256k1/Random.h"
+ extern Secp256K1 *secp;
+ 
+ #include "hash/sha256.h"
+ #include "xxhash/xxhash.h"
+ 
+ #include <fstream>
+ 
+ /* endomorphism precomputed point */
+ Point Glambda;
+ 
+ Point* GTable = nullptr;
+ int GTableSize = 0;
+ int UseGTable = 0;
+ 
+ static void free_gtable() {
+diff --git a/keyhunt.cpp b/keyhunt.cpp
+index b4a242b4d65a86b02570a0eed66c3e591f443e29..0ff6ea3ed7539bce29ef8a7f580a4395aace8d86 100644
+--- a/keyhunt.cpp
++++ b/keyhunt.cpp
+@@ -6880,130 +6880,130 @@ void generate_block(Int *start,uint64_t count,struct rmd160_entry *table){
+         key.Set(start);
+         Point pub;
+         if(FLAGENDOMORPHISM){
+                 Int k1,k2;
+                 glv_split(key,k1,k2);
+                 Point p1 = secp->ScalarMultiplication(secp->G,&k1);
+                 Point p2 = secp->ScalarMultiplication(Glambda,&k2);
+                 pub = secp->AddDirect(p1,p2);
+         }else if(UseGTable){
+                 pub = ComputePublicKey_GTable(key);
+         }else{
+                 pub = secp->ComputePublicKey(&key);
+         }
+ 
+         uint64_t i = 0;
+         while(i + 8 <= count){
+                 Point p0 = pub;
+                 Point p1 = secp->AddDirect(p0,secp->G);
+                 Point p2 = secp->AddDirect(p1,secp->G);
+                 Point p3 = secp->AddDirect(p2,secp->G);
+                 Point p4 = secp->AddDirect(p3,secp->G);
+                 Point p5 = secp->AddDirect(p4,secp->G);
+                 Point p6 = secp->AddDirect(p5,secp->G);
+                 Point p7 = secp->AddDirect(p6,secp->G);
+ 
+-#ifdef __AVX2__
+-                secp->GetHash160_8(P2PKH,true,
+-                        p0,p1,p2,p3,p4,p5,p6,p7,
+-                        table[i].hash,
+-                        table[i+1].hash,
+-                        table[i+2].hash,
+-                        table[i+3].hash,
+-                        table[i+4].hash,
+-                        table[i+5].hash,
+-                        table[i+6].hash,
+-                        table[i+7].hash);
+-#else
+-                secp->GetHash160(P2PKH,true,
+-                        p0,p1,p2,p3,
+-                        table[i].hash,
+-                        table[i+1].hash,
+-                        table[i+2].hash,
+-                        table[i+3].hash);
+-                secp->GetHash160(P2PKH,true,
+-                        p4,p5,p6,p7,
+-                        table[i+4].hash,
+-                        table[i+5].hash,
+-                        table[i+6].hash,
+-                        table[i+7].hash);
+-#endif
++                alignas(32) uint8_t pubs[8][64];
++                alignas(32) uint8_t sh[8][32];
++                alignas(32) uint8_t rh[8][20];
++
++                secp->GetPublicKeyRaw(true,p0,(char*)pubs[0]);
++                secp->GetPublicKeyRaw(true,p1,(char*)pubs[1]);
++                secp->GetPublicKeyRaw(true,p2,(char*)pubs[2]);
++                secp->GetPublicKeyRaw(true,p3,(char*)pubs[3]);
++                secp->GetPublicKeyRaw(true,p4,(char*)pubs[4]);
++                secp->GetPublicKeyRaw(true,p5,(char*)pubs[5]);
++                secp->GetPublicKeyRaw(true,p6,(char*)pubs[6]);
++                secp->GetPublicKeyRaw(true,p7,(char*)pubs[7]);
++
++                sha256_batch_33((uint8_t*)pubs,8,(uint8_t*)sh);
++                ripemd160_batch_32((uint8_t*)sh,8,(uint8_t*)rh);
++
++                memcpy(table[i].hash,   rh[0],20);
++                memcpy(table[i+1].hash, rh[1],20);
++                memcpy(table[i+2].hash, rh[2],20);
++                memcpy(table[i+3].hash, rh[3],20);
++                memcpy(table[i+4].hash, rh[4],20);
++                memcpy(table[i+5].hash, rh[5],20);
++                memcpy(table[i+6].hash, rh[6],20);
++                memcpy(table[i+7].hash, rh[7],20);
+ 
+                 if(FLAGENDOMORPHISM){
+                         Point b0=p0,b1=p1,b2=p2,b3=p3,b4=p4,b5=p5,b6=p6,b7=p7;
+                         Point c0=p0,c1=p1,c2=p2,c3=p3,c4=p4,c5=p5,c6=p6,c7=p7;
+                         b0.x.ModMulK1(&beta);  b1.x.ModMulK1(&beta);  b2.x.ModMulK1(&beta);  b3.x.ModMulK1(&beta);
+                         b4.x.ModMulK1(&beta);  b5.x.ModMulK1(&beta);  b6.x.ModMulK1(&beta);  b7.x.ModMulK1(&beta);
+                         c0.x.ModMulK1(&beta2); c1.x.ModMulK1(&beta2); c2.x.ModMulK1(&beta2); c3.x.ModMulK1(&beta2);
+                         c4.x.ModMulK1(&beta2); c5.x.ModMulK1(&beta2); c6.x.ModMulK1(&beta2); c7.x.ModMulK1(&beta2);
+-#ifdef __AVX2__
+-                        secp->GetHash160_8(P2PKH,true,
+-                                b0,b1,b2,b3,b4,b5,b6,b7,
+-                                table[i].hash_l1,
+-                                table[i+1].hash_l1,
+-                                table[i+2].hash_l1,
+-                                table[i+3].hash_l1,
+-                                table[i+4].hash_l1,
+-                                table[i+5].hash_l1,
+-                                table[i+6].hash_l1,
+-                                table[i+7].hash_l1);
+-                        secp->GetHash160_8(P2PKH,true,
+-                                c0,c1,c2,c3,c4,c5,c6,c7,
+-                                table[i].hash_l2,
+-                                table[i+1].hash_l2,
+-                                table[i+2].hash_l2,
+-                                table[i+3].hash_l2,
+-                                table[i+4].hash_l2,
+-                                table[i+5].hash_l2,
+-                                table[i+6].hash_l2,
+-                                table[i+7].hash_l2);
+-#else
+-                        secp->GetHash160(P2PKH,true,
+-                                b0,b1,b2,b3,
+-                                table[i].hash_l1,
+-                                table[i+1].hash_l1,
+-                                table[i+2].hash_l1,
+-                                table[i+3].hash_l1);
+-                        secp->GetHash160(P2PKH,true,
+-                                b4,b5,b6,b7,
+-                                table[i+4].hash_l1,
+-                                table[i+5].hash_l1,
+-                                table[i+6].hash_l1,
+-                                table[i+7].hash_l1);
+-                        secp->GetHash160(P2PKH,true,
+-                                c0,c1,c2,c3,
+-                                table[i].hash_l2,
+-                                table[i+1].hash_l2,
+-                                table[i+2].hash_l2,
+-                                table[i+3].hash_l2);
+-                        secp->GetHash160(P2PKH,true,
+-                                c4,c5,c6,c7,
+-                                table[i+4].hash_l2,
+-                                table[i+5].hash_l2,
+-                                table[i+6].hash_l2,
+-                                table[i+7].hash_l2);
+-#endif
++                        alignas(32) uint8_t pubs1[8][64];
++                        alignas(32) uint8_t pubs2[8][64];
++                        alignas(32) uint8_t sh1[8][32];
++                        alignas(32) uint8_t sh2[8][32];
++                        alignas(32) uint8_t rh1[8][20];
++                        alignas(32) uint8_t rh2[8][20];
++
++                        secp->GetPublicKeyRaw(true,b0,(char*)pubs1[0]);
++                        secp->GetPublicKeyRaw(true,b1,(char*)pubs1[1]);
++                        secp->GetPublicKeyRaw(true,b2,(char*)pubs1[2]);
++                        secp->GetPublicKeyRaw(true,b3,(char*)pubs1[3]);
++                        secp->GetPublicKeyRaw(true,b4,(char*)pubs1[4]);
++                        secp->GetPublicKeyRaw(true,b5,(char*)pubs1[5]);
++                        secp->GetPublicKeyRaw(true,b6,(char*)pubs1[6]);
++                        secp->GetPublicKeyRaw(true,b7,(char*)pubs1[7]);
++
++                        secp->GetPublicKeyRaw(true,c0,(char*)pubs2[0]);
++                        secp->GetPublicKeyRaw(true,c1,(char*)pubs2[1]);
++                        secp->GetPublicKeyRaw(true,c2,(char*)pubs2[2]);
++                        secp->GetPublicKeyRaw(true,c3,(char*)pubs2[3]);
++                        secp->GetPublicKeyRaw(true,c4,(char*)pubs2[4]);
++                        secp->GetPublicKeyRaw(true,c5,(char*)pubs2[5]);
++                        secp->GetPublicKeyRaw(true,c6,(char*)pubs2[6]);
++                        secp->GetPublicKeyRaw(true,c7,(char*)pubs2[7]);
++
++                        sha256_batch_33((uint8_t*)pubs1,8,(uint8_t*)sh1);
++                        ripemd160_batch_32((uint8_t*)sh1,8,(uint8_t*)rh1);
++
++                        sha256_batch_33((uint8_t*)pubs2,8,(uint8_t*)sh2);
++                        ripemd160_batch_32((uint8_t*)sh2,8,(uint8_t*)rh2);
++
++                        memcpy(table[i].hash_l1,   rh1[0],20);
++                        memcpy(table[i+1].hash_l1, rh1[1],20);
++                        memcpy(table[i+2].hash_l1, rh1[2],20);
++                        memcpy(table[i+3].hash_l1, rh1[3],20);
++                        memcpy(table[i+4].hash_l1, rh1[4],20);
++                        memcpy(table[i+5].hash_l1, rh1[5],20);
++                        memcpy(table[i+6].hash_l1, rh1[6],20);
++                        memcpy(table[i+7].hash_l1, rh1[7],20);
++
++                        memcpy(table[i].hash_l2,   rh2[0],20);
++                        memcpy(table[i+1].hash_l2, rh2[1],20);
++                        memcpy(table[i+2].hash_l2, rh2[2],20);
++                        memcpy(table[i+3].hash_l2, rh2[3],20);
++                        memcpy(table[i+4].hash_l2, rh2[4],20);
++                        memcpy(table[i+5].hash_l2, rh2[5],20);
++                        memcpy(table[i+6].hash_l2, rh2[6],20);
++                        memcpy(table[i+7].hash_l2, rh2[7],20);
+                 }
+ 
+                 key.Get32Bytes(table[i].priv); key.AddOne();
+                 key.Get32Bytes(table[i+1].priv); key.AddOne();
+                 key.Get32Bytes(table[i+2].priv); key.AddOne();
+                 key.Get32Bytes(table[i+3].priv); key.AddOne();
+                 key.Get32Bytes(table[i+4].priv); key.AddOne();
+                 key.Get32Bytes(table[i+5].priv); key.AddOne();
+                 key.Get32Bytes(table[i+6].priv); key.AddOne();
+                 key.Get32Bytes(table[i+7].priv); key.AddOne();
+ 
+                 pub = secp->AddDirect(p7,secp->G);
+                 i += 8;
+         }
+ 
+         for(; i < count; i++){
+                 secp->GetHash160(P2PKH,true,pub,table[i].hash);
+                 if(FLAGENDOMORPHISM){
+                         Point b = pub;
+                         b.x.ModMulK1(&beta);
+                         secp->GetHash160(P2PKH,true,b,table[i].hash_l1);
+                         b.x.Set(&pub.x);
+                         b.x.ModMulK1(&beta2);
+                         secp->GetHash160(P2PKH,true,b,table[i].hash_l2);
+                 }
