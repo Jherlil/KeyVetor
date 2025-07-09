@@ -4,6 +4,7 @@
 #include "secp256k1/SECP256k1.h"
 #include <vector>
 #include <string.h>
+#include <omp.h>
 
 extern Secp256K1 *secp;
 
@@ -50,19 +51,34 @@ bool wif_public_key(const std::string &wif, Point &pubkey, bool &compressed) {
 void wif_public_keys_batch(const std::vector<std::string> &wifs,
                            std::vector<Point> &pubkeys,
                            bool &compressed) {
-    std::vector<Int> keys;
-    keys.reserve(wifs.size());
-    bool comp = true;
-    for(const auto &w : wifs) {
-        Int k; bool c = false;
-        if(wif_decode(w, k, c)) {
-            keys.push_back(k);
-            comp = c;
+    size_t n = wifs.size();
+    pubkeys.resize(n);
+    std::vector<Int> keys(n);
+    std::vector<int> valid(n, 0);
+    std::vector<int> compf(n, 0);
+
+    #pragma omp parallel for schedule(dynamic,8)
+    for(size_t i = 0; i < n; ++i) {
+        bool c = false;
+        if(wif_decode(wifs[i], keys[i], c)) {
+            valid[i] = 1;
+            compf[i] = c ? 1 : 0;
         } else {
-            keys.push_back(Int());
+            valid[i] = 0;
         }
     }
-    secp->ComputePublicKeysPippenger(keys, pubkeys);
+
+    bool comp = true;
+    for(size_t i=0;i<n;i++) {
+        if(valid[i]) { comp = compf[i]; break; }
+    }
+
+    #pragma omp parallel for schedule(dynamic,8)
+    for(size_t i = 0; i < n; ++i) {
+        if(valid[i])
+            pubkeys[i] = secp->ComputePublicKey(&keys[i]);
+    }
+
     compressed = comp;
 }
 

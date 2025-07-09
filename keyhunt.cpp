@@ -34,7 +34,7 @@ extern Secp256K1 *secp;
 #include "wif_utils.h"
 
 #ifndef BATCH
-#define BATCH 1
+#define BATCH 8
 #endif
 
 #ifndef LIKELY
@@ -6696,13 +6696,38 @@ void check_wifs_file(const char *fname) {
     std::vector<Point> pubs;
     bool comp = true;
     wif_public_keys_batch(wifs, pubs, comp);
-    for(size_t i=0;i<wifs.size();i++) {
-        unsigned char h160[20];
-        secp->GetHash160(P2PKH, comp, pubs[i], h160);
-        char hex[41];
-        for(int j=0;j<20;j++) sprintf(hex+j*2, "%02x", h160[j]);
-        hex[40]=0;
-        printf("%s,%s\n", wifs[i].c_str(), hex);
+
+    size_t n = wifs.size();
+    for(size_t i=0;i<n;i+=8) {
+        size_t chunk = (n - i >= 8) ? 8 : n - i;
+        alignas(32) uint8_t h8[8][20];
+        switch(chunk) {
+            case 8:
+                secp->GetHash160_8(P2PKH, comp,
+                    pubs[i], pubs[i+1], pubs[i+2], pubs[i+3],
+                    pubs[i+4], pubs[i+5], pubs[i+6], pubs[i+7],
+                    h8[0], h8[1], h8[2], h8[3], h8[4], h8[5], h8[6], h8[7]);
+                break;
+            case 7: case 6: case 5:
+                for(size_t j=0;j<chunk;j++)
+                    secp->GetHash160(P2PKH, comp, pubs[i+j], h8[j]);
+                break;
+            case 4:
+                secp->GetHash160(P2PKH, comp,
+                    pubs[i], pubs[i+1], pubs[i+2], pubs[i+3],
+                    h8[0], h8[1], h8[2], h8[3]);
+                break;
+            default:
+                for(size_t j=0;j<chunk;j++)
+                    secp->GetHash160(P2PKH, comp, pubs[i+j], h8[j]);
+                break;
+        }
+        for(size_t j=0;j<chunk;j++) {
+            char hex[41];
+            for(int k=0;k<20;k++) sprintf(hex+k*2, "%02x", h8[j][k]);
+            hex[40] = 0;
+            printf("%s,%s\n", wifs[i+j].c_str(), hex);
+        }
     }
 }
 
