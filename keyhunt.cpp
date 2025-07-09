@@ -330,11 +330,47 @@ static inline void rng_fill32(uint8_t out[32]) {
 #ifdef __AVX2__
 static inline void rng_fill32x8(uint8_t out[8][32], Xoshiro256PP_8way &g) {
     alignas(32) uint64_t tmp[8];
-    for (int b = 0; b < 4; ++b) {
-        g.next8(tmp);
-        for (int j = 0; j < 8; ++j)
-            ((uint64_t*)out[j])[b] = __builtin_bswap64(tmp[j]);
-    }
+
+    g.next8(tmp);
+    ((uint64_t*)out[0])[0] = __builtin_bswap64(tmp[0]);
+    ((uint64_t*)out[1])[0] = __builtin_bswap64(tmp[1]);
+    ((uint64_t*)out[2])[0] = __builtin_bswap64(tmp[2]);
+    ((uint64_t*)out[3])[0] = __builtin_bswap64(tmp[3]);
+    ((uint64_t*)out[4])[0] = __builtin_bswap64(tmp[4]);
+    ((uint64_t*)out[5])[0] = __builtin_bswap64(tmp[5]);
+    ((uint64_t*)out[6])[0] = __builtin_bswap64(tmp[6]);
+    ((uint64_t*)out[7])[0] = __builtin_bswap64(tmp[7]);
+    __builtin_prefetch(&out[0][32], 1, 1);
+
+    g.next8(tmp);
+    ((uint64_t*)out[0])[1] = __builtin_bswap64(tmp[0]);
+    ((uint64_t*)out[1])[1] = __builtin_bswap64(tmp[1]);
+    ((uint64_t*)out[2])[1] = __builtin_bswap64(tmp[2]);
+    ((uint64_t*)out[3])[1] = __builtin_bswap64(tmp[3]);
+    ((uint64_t*)out[4])[1] = __builtin_bswap64(tmp[4]);
+    ((uint64_t*)out[5])[1] = __builtin_bswap64(tmp[5]);
+    ((uint64_t*)out[6])[1] = __builtin_bswap64(tmp[6]);
+    ((uint64_t*)out[7])[1] = __builtin_bswap64(tmp[7]);
+
+    g.next8(tmp);
+    ((uint64_t*)out[0])[2] = __builtin_bswap64(tmp[0]);
+    ((uint64_t*)out[1])[2] = __builtin_bswap64(tmp[1]);
+    ((uint64_t*)out[2])[2] = __builtin_bswap64(tmp[2]);
+    ((uint64_t*)out[3])[2] = __builtin_bswap64(tmp[3]);
+    ((uint64_t*)out[4])[2] = __builtin_bswap64(tmp[4]);
+    ((uint64_t*)out[5])[2] = __builtin_bswap64(tmp[5]);
+    ((uint64_t*)out[6])[2] = __builtin_bswap64(tmp[6]);
+    ((uint64_t*)out[7])[2] = __builtin_bswap64(tmp[7]);
+
+    g.next8(tmp);
+    ((uint64_t*)out[0])[3] = __builtin_bswap64(tmp[0]);
+    ((uint64_t*)out[1])[3] = __builtin_bswap64(tmp[1]);
+    ((uint64_t*)out[2])[3] = __builtin_bswap64(tmp[2]);
+    ((uint64_t*)out[3])[3] = __builtin_bswap64(tmp[3]);
+    ((uint64_t*)out[4])[3] = __builtin_bswap64(tmp[4]);
+    ((uint64_t*)out[5])[3] = __builtin_bswap64(tmp[5]);
+    ((uint64_t*)out[6])[3] = __builtin_bswap64(tmp[6]);
+    ((uint64_t*)out[7])[3] = __builtin_bswap64(tmp[7]);
 }
 #endif
 
@@ -6700,6 +6736,10 @@ void check_wifs_file(const char *fname) {
     size_t n = wifs.size();
     for(size_t i=0;i<n;i+=8) {
         size_t chunk = (n - i >= 8) ? 8 : n - i;
+        if(i + 8 < n) {
+            __builtin_prefetch(pubs.data() + i + 8, 0, 1);
+            __builtin_prefetch(wifs[i + 8].c_str(), 0, 1);
+        }
         alignas(32) uint8_t h8[8][20];
         switch(chunk) {
             case 8:
